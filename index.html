@@ -301,6 +301,19 @@ html,body{
 .cam-th.on{border-color:var(--acc);}
 .cam-th.on img,.cam-th:hover img{opacity:1;}
 
+/* slideshow progress bar */
+.cam-progress-bar{
+  position:relative;z-index:1;
+  width:100%;max-width:340px;
+  height:2px;background:var(--border);
+  overflow:hidden;
+}
+.cam-progress-fill{
+  height:100%;background:var(--acc);
+  width:0%;
+  transition:width 0.3s linear;
+}
+
 .cam-right{display:flex;flex-direction:column;padding:28px 36px 28px;overflow:hidden;}
 .cam-badge{
   display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
@@ -451,6 +464,7 @@ html,body{
     <div class="cam-left-bg"></div>
     <div class="cam-img" id="camImg"></div>
     <div class="cam-thumbs" id="camThumbs"></div>
+    <div class="cam-progress-bar"><div class="cam-progress-fill" id="camProgressFill"></div></div>
   </div>
   <div class="cam-right">
     <div class="cam-badge" id="camBadge"></div>
@@ -464,10 +478,6 @@ html,body{
 <script>
 /* ─────────────────────────────────────────────
    IMAGE HELPER
-   For model id "AK-C321N-28", images are:
-     ./images/cameras/AK-C321N-28-1.webp
-     ./images/cameras/AK-C321N-28-2.webp
-     ./images/cameras/AK-C321N-28-3.webp
 ───────────────────────────────────────────── */
 function camImgPath(id, n){
   return `./images/cameras/${id}-${n}.webp`;
@@ -479,8 +489,6 @@ const DATA={
     eyebrow:'SERIES 01',
     sub:'Entry-level Full HD 2MP network cameras with Full Color smart night vision, built-in microphone, and IP67 weatherproof protection. Easy PoE installation for reliable day and night monitoring.',
     models:[
-
-      /* ── MODEL 1 ── TC-C321N 1ANB-28 (2.8mm Bullet) */
       {
         id:'AK-C321N-28',
         name:'TC-C321N 1ANB-28',
@@ -504,8 +512,6 @@ const DATA={
           'ONVIF Profile S/T, SDK, CGI & Milestone compatible'
         ]
       },
-
-      /* ── MODEL 2 ── TC-C321N 1ANB-4 (4mm Bullet) */
       {
         id:'AK-C321N-4',
         name:'TC-C321N 1ANB-4',
@@ -530,8 +536,6 @@ const DATA={
           'ONVIF Profile S/T, SDK, CGI & Milestone compatible'
         ]
       },
-
-      /* ── MODEL 3 ── TC-C320N (2.8mm Dome) */
       {
         id:'AK-C320N',
         name:'TC-C320N 1ANB-28',
@@ -656,11 +660,68 @@ const DATA={
 };
 
 const SERIES_ORDER=['AK','SK','LK','Tian','PTZ'];
-let curS=null,curC=null,slideIdx=0,curImgIdx=1;
+let curS=null, curC=null, slideIdx=0, curImgIdx=1;
 const VISIBLE=3;
 
 /* ─────────────────────────────────────────────
-   SLIDER CARD: first image as thumbnail
+   AUTO SLIDESHOW — 30 second interval
+───────────────────────────────────────────── */
+let _slideTimer = null;
+let _progressTimer = null;
+const SLIDE_DURATION = 5000; // 5 seconds
+const PROGRESS_INTERVAL = 100; // update progress bar every 100ms
+let _progressElapsed = 0;
+let _currentSlideId = null;
+
+function startAutoSlide(id) {
+  stopAutoSlide();
+  _currentSlideId = id;
+  _progressElapsed = 0;
+  updateProgressBar(0);
+
+  _progressTimer = setInterval(() => {
+    _progressElapsed += PROGRESS_INTERVAL;
+    const pct = Math.min((_progressElapsed / SLIDE_DURATION) * 100, 100);
+    updateProgressBar(pct);
+  }, PROGRESS_INTERVAL);
+
+  _slideTimer = setInterval(() => {
+    const next = (curImgIdx % 3) + 1;
+    setMainImg(_currentSlideId, next, false);
+    _progressElapsed = 0;
+    updateProgressBar(0);
+  }, SLIDE_DURATION);
+}
+
+function stopAutoSlide() {
+  if (_slideTimer)    { clearInterval(_slideTimer);    _slideTimer = null; }
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+  updateProgressBar(0);
+}
+
+function updateProgressBar(pct) {
+  const fill = document.getElementById('camProgressFill');
+  if (fill) fill.style.width = pct + '%';
+}
+
+/* ─────────────────────────────────────────────
+   MAIN IMAGE + THUMBNAIL SWITCH
+───────────────────────────────────────────── */
+function setMainImg(id, n, manual) {
+  curImgIdx = n;
+  document.getElementById('camImg').innerHTML =
+    `<img src="${camImgPath(id, n)}" alt="camera view ${n}">`;
+  document.querySelectorAll('.cam-th').forEach(th => {
+    th.classList.toggle('on', th.dataset.n === String(n) && th.dataset.id === id);
+  });
+  /* if manually clicked, restart the auto-slide timer from scratch */
+  if (manual) {
+    startAutoSlide(id);
+  }
+}
+
+/* ─────────────────────────────────────────────
+   SLIDER CARD
 ───────────────────────────────────────────── */
 function renderSlider(){
   const d=DATA[curS];
@@ -720,18 +781,8 @@ function goToSlide(i){
 }
 
 /* ─────────────────────────────────────────────
-   CAMERA DETAIL: main image + 3 thumbnails
+   CAMERA DETAIL
 ───────────────────────────────────────────── */
-function setMainImg(id, n){
-  curImgIdx=n;
-  document.getElementById('camImg').innerHTML=
-    `<img src="${camImgPath(id,n)}" alt="camera view ${n}">`;
-  /* update active thumb */
-  document.querySelectorAll('.cam-th').forEach(th=>{
-    th.classList.toggle('on', th.dataset.n===String(n) && th.dataset.id===id);
-  });
-}
-
 function showCam(id){
   const sKey=Object.keys(DATA).find(k=>DATA[k].models.some(m=>m.id===id));
   const m=DATA[sKey].models.find(x=>x.id===id);
@@ -753,16 +804,28 @@ function showCam(id){
   document.getElementById('camImg').innerHTML=
     `<img src="${camImgPath(id,1)}" alt="${m.name}">`;
 
-  /* 3 thumbnails for THIS model */
+  /* 3 thumbnails */
   document.getElementById('camThumbs').innerHTML=[1,2,3].map(n=>`
     <div class="cam-th ${n===1?'on':''}" data-id="${id}" data-n="${n}"
-         onclick="setMainImg('${id}',${n})">
+         onclick="setMainImg('${id}',${n},true)">
       <img src="${camImgPath(id,n)}" alt="view ${n}"
            onerror="this.parentElement.style.opacity='0.3'">
     </div>
   `).join('');
 
-  nav();show('p-camera');
+  /* pause on hover over image or thumbs, resume on leave */
+  const camImgEl   = document.getElementById('camImg');
+  const camThumbsEl = document.getElementById('camThumbs');
+
+  camImgEl.onmouseenter    = () => stopAutoSlide();
+  camImgEl.onmouseleave    = () => startAutoSlide(id);
+  camThumbsEl.onmouseenter = () => stopAutoSlide();
+  camThumbsEl.onmouseleave = () => startAutoSlide(id);
+
+  nav(); show('p-camera');
+
+  /* start auto-slide */
+  startAutoSlide(id);
 }
 
 /* ─────────────────────────────────────────────
@@ -790,12 +853,12 @@ function nav(){
   bar.innerHTML=h;
 }
 
-function goHome(){curS=null;curC=null;nav();show('p-home');}
-function backSer(){curC=null;slideIdx=0;nav();renderSlider();show('p-series');}
-function goBack(){if(curC)backSer();else goHome();}
+function goHome(){ curS=null; curC=null; stopAutoSlide(); nav(); show('p-home'); }
+function backSer(){ curC=null; slideIdx=0; stopAutoSlide(); nav(); renderSlider(); show('p-series'); }
+function goBack(){ if(curC) backSer(); else goHome(); }
 
 function showSeries(code){
-  curS=code;curC=null;slideIdx=0;
+  curS=code; curC=null; slideIdx=0;
   const d=DATA[code];
   const serNum=SERIES_ORDER.indexOf(code)+1;
 
@@ -806,10 +869,10 @@ function showSeries(code){
   document.getElementById('sCountNum').textContent=d.models.length;
 
   renderSlider();
-  nav();show('p-series');
+  nav(); show('p-series');
 }
 
-window.addEventListener('resize',()=>{if(curS&&!curC)renderSlider();});
+window.addEventListener('resize',()=>{ if(curS&&!curC) renderSlider(); });
 </script>
 </body>
 </html>
